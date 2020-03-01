@@ -317,7 +317,7 @@ TEST_CASE("event http store", "[volstore::]")
         Image backend("testimage");
         HttpStore<Image> srv(backend);
 
-        HttpStoreEventClient img;
+        HttpStoreEventClient img("127.0.0.1:8083");
 
         auto& bk = singleton<std::array<tdb::RandomKeyT<tdb::Key32>, lim>>(); // Heap
 
