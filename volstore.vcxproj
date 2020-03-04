@@ -115,8 +115,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>..\volcopy\cryptopp8.2;..\template_db;..\minimalhttp;..\d8u;$(IncludePath)</IncludePath>
-    <LibraryPath>..\volcopy\cryptopp8.2\CryptoPP\x64\Output\Release;$(LibraryPath)</LibraryPath>
+    <IncludePath>..\common\cryptopp8.2;..\template_db;..\minimalhttp;..\d8u;$(IncludePath)</IncludePath>
+    <LibraryPath>..\common\cryptopp8.2\CryptoPP\x64\Output\Release;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

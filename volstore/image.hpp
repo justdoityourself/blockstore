@@ -13,11 +13,11 @@
 
 #include "tdb/database.hpp"
 
-using namespace std;
-using namespace gsl;
-
 namespace volstore
 {
+	using namespace std;
+	using namespace gsl;
+
 	/*
 		Finishing the database layer left this version obsolete.
 	*/

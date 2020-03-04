@@ -15,11 +15,10 @@
 #include "tdb/mapping.hpp"
 #include "util.hpp"
 
-using namespace std;
-using namespace gsl;
-
 namespace volstore
 {
+	using namespace std;
+	using namespace gsl;
 	using namespace util;
 
 	class Simple

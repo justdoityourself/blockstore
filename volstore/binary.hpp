@@ -51,7 +51,7 @@ namespace volstore
             Shutdown();
         }
 
-        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1)
+        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1, bool buffered_writes = false)
             : store(_store)
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
                 [&](auto* pc, auto req, auto body, void *reply)
@@ -80,25 +80,39 @@ namespace volstore
                     pc->ActivateMap(reply,store.Map(req));
 
                 }, true, { threads })
-            , write((uint16_t)stoi(write_port.data()), ConnectionType::readmap32,
+            , write((uint16_t)stoi(write_port.data()), (buffered_writes) ? ConnectionType::message : ConnectionType::readmap32,
                 [&](auto* pc, auto header, auto body, void* reply)
                 {
-                    auto [size, id] = Map32::DecodeHeader(header);
-
-                    if (size > 1024 * 1024 * 8)
-                        size = 0;
+                    uint32_t written = 0;
+                    if (buffered_writes)
+                    {
+                        store.Write(gsl::span<uint8_t>(header.data(),(size_t)32), gsl::span<uint8_t>(header.data()+32, header.size()-32));
+                        written = header.size() - 32;
+                    }
                     else
                     {
-                        auto dest = store.Allocate(id, (size_t)size);
+                        //Unbuffered mode moves data from the socket directly to disk:
+                        //
 
-                        pc->Read(dest);
+                        auto [size, id] = Map32::DecodeHeader(header);
+
+                        if (size > 1024 * 1024 * 8)
+                            size = 0;
+                        else
+                        {
+                            auto dest = store.Allocate(id, (size_t)size);
+
+                            pc->Read(dest);
+                            written = size;
+                        }
                     }
 
                     std::vector<uint8_t> buffer(4);
-                    * ( (uint32_t*)buffer.data() ) = size;
+                    *((uint32_t*)buffer.data()) = written;
 
                     pc->AsyncWrite(std::move(buffer));
-                }, false, { threads })
+
+                }, buffered_writes, { threads })
         {
         }
     };
@@ -121,12 +135,12 @@ namespace volstore
 
         template <typename T, typename Y> void Write(const T& id, const Y& payload)
         {
-            return write.AsyncWriteWait(join_memory(id,payload)); //Sub-optimal, todo write lists
+            write.AsyncWriteWait(join_memory(id,payload)); //Sub-optimal, todo write lists
         }
 
         template <typename T> bool Is(const T& id)
         {
-            auto res = query.AsyncWriteWaitT(id);
+            auto [res,body] = query.AsyncWriteWaitT(id);
 
             return (res.size() == 1 ) ? res[0] > 0 : false;
         }
@@ -138,7 +152,7 @@ namespace volstore
             if (limit > 64)
                 throw runtime_error("The max limit for Many is 64");
 
-            auto res = query.AsyncWriteWaitT(ids);
+            auto [res, body] = query.AsyncWriteWaitT(ids);
 
             if(res.size()!=8)
                 throw runtime_error("Bad reply");
