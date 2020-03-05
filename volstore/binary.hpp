@@ -12,16 +12,16 @@
 #include <future>
 #include <bitset>
 
-#include "util.hpp"
+#include "d8u/util.hpp"
 
 namespace volstore
 {
-    using namespace util;
     using namespace std;
     using namespace gsl;
 
     using namespace mhttp;
     using namespace d8u;
+    using namespace d8u::util;
 
     template <typename STORE, size_t U = 32, size_t M = 1024 * 1024> class BinaryStore
     {

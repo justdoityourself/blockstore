@@ -32,9 +32,6 @@
     <ClInclude Include="volstore\simple.hpp">
       <Filter>volstore</Filter>
     </ClInclude>
-    <ClInclude Include="volstore\util.hpp">
-      <Filter>volstore</Filter>
-    </ClInclude>
     <ClInclude Include="volstore\test.hpp">
       <Filter>volstore</Filter>
     </ClInclude>

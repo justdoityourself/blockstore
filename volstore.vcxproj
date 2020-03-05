@@ -233,7 +233,6 @@
     <ClInclude Include="volstore\http.hpp" />
     <ClInclude Include="volstore\simple.hpp" />
     <ClInclude Include="volstore\test.hpp" />
-    <ClInclude Include="volstore\util.hpp" />
     <ClInclude Include="volstore\image.hpp" />
   </ItemGroup>
   <ItemGroup>

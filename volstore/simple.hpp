@@ -13,13 +13,13 @@
 #include "../gsl-lite.hpp"
 
 #include "tdb/mapping.hpp"
-#include "util.hpp"
+#include "d8u/util.hpp"
 
 namespace volstore
 {
 	using namespace std;
 	using namespace gsl;
-	using namespace util;
+	using namespace d8u::util;
 
 	class Simple
 	{
