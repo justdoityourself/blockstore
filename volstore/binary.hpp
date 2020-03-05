@@ -130,7 +130,7 @@ namespace volstore
 
         template <typename T> std::vector<uint8_t> Read(const T& id)
         {
-            return read.AsyncWriteWaitT(id);
+            return read.AsyncWriteWaitT(id).first;
         }
 
         template <typename T, typename Y> void Write(const T& id, const Y& payload)
@@ -161,6 +161,11 @@ namespace volstore
 
             return result;
         }
+
+        template <typename T, typename V> bool Validate(const T& id, V v) const
+        {
+            return true;//TODO request server to validate block without transport.
+        }
     };
 
     class BinaryStoreEventClient
@@ -179,6 +184,11 @@ namespace volstore
             query.Flush();
             read.Flush();
             write.Flush();
+        }
+
+        template <typename T, typename V> bool Validate(const T& id, V v) const
+        {
+            return true;//TODO request server to validate block without transport.
         }
 
         template <typename T, typename F> void Read(const T& id, F f)

@@ -103,6 +103,11 @@ namespace volstore
 			: db(string(_root) + "/index.db")
 			, dat(string(_root) + "/image.dat") { }
 
+		template <typename T, typename V> bool Validate(const T& id, V v)
+		{
+			return v(Read(id));
+		}
+
 		template <typename T> gsl::span<uint8_t> Map(const T& id)
 		{
 			auto addr = db.FindLock(*((tdb::Key32*) id.data()));
