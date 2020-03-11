@@ -12,6 +12,7 @@
 #include "../mio.hpp"
 
 #include "tdb/database.hpp"
+#include "d8u/util.hpp"
 
 namespace volstore
 {
@@ -97,7 +98,11 @@ namespace volstore
 		tdb::LargeHashmapSafe db;
 		tdb::_MapList<256 * 1024 * 1024, 0> dat;
 
+		d8u::util::Statistics stats;
+
 	public:
+
+		d8u::util::Statistics* Stats() { return &stats; }
 
 		Image(string_view _root)
 			: db(string(_root) + "/index.db")
@@ -105,7 +110,12 @@ namespace volstore
 
 		template <typename T, typename V> bool Validate(const T& id, V v)
 		{
-			return v(Read(id));
+			auto block = Read(id);
+
+			stats.atomic.items++;
+			stats.atomic.read += block.size();
+
+			return v(block);
 		}
 
 		template <typename T> gsl::span<uint8_t> Map(const T& id)
@@ -126,6 +136,10 @@ namespace volstore
 		template <typename T> std::vector<uint8_t> Read(const T& id)
 		{
 			auto map = Map(id);
+
+			stats.atomic.items++;
+			stats.atomic.read += map.size();
+
 			std::vector<uint8_t> result(map.size());
 
 			std::copy(map.begin(), map.end(), result.begin());
@@ -135,6 +149,9 @@ namespace volstore
 
 		template <typename T> gsl::span<uint8_t> Allocate(const T& id, size_t size)
 		{
+			stats.atomic.blocks++;
+			stats.atomic.write += size;
+
 			auto res = db.InsertLock( *( (tdb::Key32*) id.data() ), uint64_t(0));
 
 			//Duplicate block insert?
@@ -162,6 +179,8 @@ namespace volstore
 
 		template <typename T> bool Is(const T& id)
 		{
+			stats.atomic.queries++;
+
 			return db.FindLock( *( (tdb::Key32*) id.data() ) ) != nullptr;
 		}
 
@@ -170,6 +189,8 @@ namespace volstore
 			std::bitset<64> result;
 
 			auto limit = ids.size() / U;
+
+			stats.atomic.queries += limit;
 
 			if (limit > 64)
 				throw runtime_error("The max limit for Many is 64");
