@@ -33,6 +33,11 @@ namespace volstore
         STORE& store;
     public:
 
+        size_t ConnectionCount()
+        {
+            return query.ConnectionCount() + read.ConnectionCount() + write.ConnectionCount();
+        }
+
         void Join()
         {
             query.Join();
@@ -58,17 +63,20 @@ namespace volstore
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
                 [&](auto* pc, auto req, auto body, void *reply)
                 {
-                    if (req.size() % U)
+                    std::vector<uint8_t> buffer;
+                    if (req.size() == 33)
+                    {
+                        buffer.resize(1);
+                        buffer[0] = (char)store.ValidateStandard(gsl::span<uint8_t>(req.data()+1, (size_t)32));
+                    }
+                    else if (req.size() % U)
                     {
                         std::cout << "Query Dropping Connection" << std::endl;
-                        pc->reader_fault = true;
-                        pc->writer_fault = true;
+                        pc->Close();
 
                         return;
                     }
-
-                    std::vector<uint8_t> buffer;
-                    if (req.size() == U)
+                    else if (req.size() == U)
                     {
                         buffer.resize(1);
                         buffer[0] = (char)store.Is(req);
@@ -88,8 +96,7 @@ namespace volstore
                     if (req.size() != 32)
                     {
                         std::cout << "Read Dropping Connection" << std::endl;
-                        pc->reader_fault = true;
-                        pc->writer_fault = true;
+                        pc->Close();
 
                         return;
                     }
@@ -103,8 +110,7 @@ namespace volstore
                     if (header.size() < 32)
                     {
                         std::cout << "write Dropping Connection" << std::endl;
-                        pc->reader_fault = true;
-                        pc->writer_fault = true;
+                        pc->Close();
 
                         return;
                     }
@@ -220,10 +226,12 @@ namespace volstore
             return result | cache_result.to_ullong();
         }
 
-        template <typename T, typename V> bool Validate(const T& id, V v) const
+        template <typename T, typename V> bool Validate(const T& id, V v)
         {
-            std::cout << "TODO NET-VALIDATE!!!" << std::endl;
-            return true;//TODO request server to validate block without transport.
+            std::vector<uint8_t> cmd = { 1 };
+            auto [res, body] = query.AsyncWriteWait(join_memory(cmd,id));
+
+            return (res.size() == 1) ? res[0] > 0 : false;
         }
     };
 

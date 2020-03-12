@@ -13,6 +13,7 @@
 
 #include "tdb/database.hpp"
 #include "d8u/util.hpp"
+#include "d8u/transform.hpp"
 
 namespace volstore
 {
@@ -108,12 +109,16 @@ namespace volstore
 			: db(string(_root) + "/index.db")
 			, dat(string(_root) + "/image.dat") { }
 
+		template <typename T> bool ValidateStandard(const T& id)
+		{
+			auto block = Map(id);
+
+			return d8u::transform::validate_block(block);
+		}
+
 		template <typename T, typename V> bool Validate(const T& id, V v)
 		{
 			auto block = Read(id);
-
-			stats.atomic.items++;
-			stats.atomic.read += block.size();
 
 			return v(block);
 		}
@@ -130,15 +135,15 @@ namespace volstore
 
 			auto size = *((uint32_t*)block);
 
+			stats.atomic.items++;
+			stats.atomic.read += size;
+
 			return gsl::span<uint8_t>(block + sizeof(uint32_t), size);
 		}
 
 		template <typename T> std::vector<uint8_t> Read(const T& id)
 		{
 			auto map = Map(id);
-
-			stats.atomic.items++;
-			stats.atomic.read += map.size();
 
 			std::vector<uint8_t> result(map.size());
 

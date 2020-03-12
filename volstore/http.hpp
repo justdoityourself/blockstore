@@ -36,6 +36,11 @@ namespace volstore
         STORE &store;
     public:
 
+        size_t ConnectionCount()
+        {
+            return server.ConnectionCount();
+        }
+
         void Join()
         {
             server.Join();
