@@ -157,11 +157,13 @@ namespace volstore
 			//Duplicate block insert?
 			//
 
-			if (res.second && *res.first != 0) return gsl::span<uint8_t>();
+			if (res.second && *res.first != 0) 
+				return gsl::span<uint8_t>();
 
 			auto [p, o] = dat.AllocateAlign(size + sizeof(uint32_t));
 
-			if(!p) return gsl::span<uint8_t>();
+			if(!p) 
+				return gsl::span<uint8_t>();
 
 			*((uint32_t*)p) = (uint32_t)size;
 
@@ -173,6 +175,9 @@ namespace volstore
 		template <typename T, typename Y> void Write(const T& id, const Y& payload)
 		{
 			auto block = Allocate(id, payload.size());
+
+			if (!block.data())
+				return;
 
 			std::copy(payload.begin(), payload.end(), block.begin());
 		}

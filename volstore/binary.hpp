@@ -153,9 +153,12 @@ namespace volstore
         EventClient query;
         EventClient read;
         EventClient write;
+
+        tdb::MediumHashmapSafe db;
     public:
-        BinaryStoreClient(string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111")
-            : query(_query,ConnectionType::message)
+        BinaryStoreClient(std::string_view cache="127.0.0.1.cache",string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111")
+            : db(cache)
+            , query(_query,ConnectionType::message)
             , read(_read, ConnectionType::message)
             , write(_write, ConnectionType::message) { }
 
@@ -171,6 +174,11 @@ namespace volstore
 
         template <typename T> bool Is(const T& id)
         {
+            auto [ptr, exists] = db.InsertLock(*( (tdb::Key32*) id.data() ), uint64_t(0));
+
+            if (exists)
+                return true;
+
             auto [res,body] = query.AsyncWriteWaitT(id);
 
             return (res.size() == 1 ) ? res[0] > 0 : false;
@@ -183,6 +191,23 @@ namespace volstore
             if (limit > 64)
                 throw runtime_error("The max limit for Many is 64");
 
+            std::bitset<64> cache_result;
+            size_t cache_count = 0;
+
+            for (size_t i = 0; i < limit; i++)
+            {
+                auto [ptr, exists] = db.InsertLock(*(((tdb::Key32*)ids.data()) + i), uint64_t(0));
+
+                if (exists)
+                {
+                    cache_result[i] = 1;
+                    cache_count++;
+                }
+            }
+
+            if (cache_count == limit)
+                return cache_result.to_ullong();
+
             std::vector<uint8_t> send(ids.size());
             std::copy(ids.begin(), ids.end(), send.begin());
             auto [res, body] = query.AsyncWriteWait(std::move(send));
@@ -192,11 +217,12 @@ namespace volstore
 
             uint64_t result = *(uint64_t*)res.data();
 
-            return result;
+            return result | cache_result.to_ullong();
         }
 
         template <typename T, typename V> bool Validate(const T& id, V v) const
         {
+            std::cout << "TODO NET-VALIDATE!!!" << std::endl;
             return true;//TODO request server to validate block without transport.
         }
     };
@@ -206,9 +232,12 @@ namespace volstore
         EventClient query;
         EventClient read;
         EventClient write;
+
+        tdb::MediumHashmapSafe db;
     public:
-        BinaryStoreEventClient(string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111")
-            : query(_query, ConnectionType::message)
+        BinaryStoreEventClient(std::string_view cache = "127.0.0.1.cache",string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111")
+            : db(cache)
+            , query(_query, ConnectionType::message)
             , read(_read, ConnectionType::message)
             , write(_write, ConnectionType::map32client) { }
 
@@ -217,11 +246,6 @@ namespace volstore
             query.Flush();
             read.Flush();
             write.Flush();
-        }
-
-        template <typename T, typename V> bool Validate(const T& id, V v) const
-        {
-            return true;//TODO request server to validate block without transport.
         }
 
         template <typename T, typename F> void Read(const T& id, F f)
@@ -242,6 +266,14 @@ namespace volstore
 
         template <typename T, typename F> void Is(const T& id, F f)
         {
+            auto [ptr, exists] = db.InsertLock(id, uint64_t(0));
+
+            if (exists)
+            {
+                f(true);
+                return;
+            }
+
             query.AsyncWriteCallbackT(id,[f = std::move(f)](auto result, auto body)
             {
                 f((result.size() == 1) ? result[0] > 0 : false);
@@ -250,6 +282,9 @@ namespace volstore
 
         template <size_t U, typename T, typename F> void Many(const T& ids, F f)
         {
+            //!TODO USE CACHE!!!!
+            std::cout << "IMPLEMENT CACHE TEST" << std::endl;
+
             auto limit = ids.size() / U;
 
             if (limit > 64)
@@ -260,6 +295,12 @@ namespace volstore
                 uint64_t res = *(uint64_t*)result.data();
                 f(res);
             });
+        }
+
+        template <typename T, typename V> bool Validate(const T& id, V v) const
+        {
+            std::cout << "TODO NET-VALIDATE!!!" << std::endl;
+            return true;//TODO request server to validate block without transport.
         }
     };
 }
