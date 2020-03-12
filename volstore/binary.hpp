@@ -25,6 +25,7 @@ namespace volstore
 
     template <typename STORE, size_t U = 32, size_t M = 1024 * 1024> class BinaryStore
     {
+        bool buffered_writes;
         TcpServer query;
         TcpServer read;
         TcpServer write;
@@ -51,13 +52,20 @@ namespace volstore
             Shutdown();
         }
 
-        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1, bool buffered_writes = false)
-            : store(_store)
+        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1, bool _buffered_writes = false)
+            : buffered_writes(_buffered_writes)
+            , store(_store)
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
                 [&](auto* pc, auto req, auto body, void *reply)
                 {
                     if (req.size() % U)
-                        throw std::runtime_error("Invalid Block size");
+                    {
+                        std::cout << "Query Dropping Connection" << std::endl;
+                        pc->reader_fault = true;
+                        pc->writer_fault = true;
+
+                        return;
+                    }
 
                     std::vector<uint8_t> buffer;
                     if (req.size() == U)
@@ -77,17 +85,40 @@ namespace volstore
             , read((uint16_t)stoi(read_port.data()), ConnectionType::writemap32,
                 [&](auto* pc, auto req, auto body, void* reply)
                 {
+                    if (req.size() != 32)
+                    {
+                        std::cout << "Read Dropping Connection" << std::endl;
+                        pc->reader_fault = true;
+                        pc->writer_fault = true;
+
+                        return;
+                    }
+
                     pc->ActivateMap(reply,store.Map(req));
 
                 }, true, { threads })
             , write((uint16_t)stoi(write_port.data()), (buffered_writes) ? ConnectionType::message : ConnectionType::readmap32,
                 [&](auto* pc, auto header, auto body, void* reply)
                 {
+                    if (header.size() < 32)
+                    {
+                        std::cout << "write Dropping Connection" << std::endl;
+                        pc->reader_fault = true;
+                        pc->writer_fault = true;
+
+                        return;
+                    }
+
                     uint32_t written = 0;
                     if (buffered_writes)
                     {
                         store.Write(gsl::span<uint8_t>(header.data(),(size_t)32), gsl::span<uint8_t>(header.data()+32, header.size()-32));
                         written = header.size() - 32;
+
+                        std::vector<uint8_t> buffer(4);
+                        *((uint32_t*)buffer.data()) = written;
+
+                        pc->ActivateWrite(reply,std::move(buffer));
                     }
                     else
                     {
@@ -97,7 +128,7 @@ namespace volstore
                         auto [size, id] = Map32::DecodeHeader(header);
 
                         if (size > 1024 * 1024 * 8)
-                            size = 0;
+                            written = 0;
                         else
                         {
                             auto dest = store.Allocate(id, (size_t)size);
@@ -105,12 +136,12 @@ namespace volstore
                             pc->Read(dest);
                             written = size;
                         }
+
+                        std::vector<uint8_t> buffer(4);
+                        *((uint32_t*)buffer.data()) = written;
+
+                        pc->AsyncWrite(std::move(buffer));
                     }
-
-                    std::vector<uint8_t> buffer(4);
-                    *((uint32_t*)buffer.data()) = written;
-
-                    pc->AsyncWrite(std::move(buffer));
 
                 }, buffered_writes, { threads })
         {
@@ -126,7 +157,7 @@ namespace volstore
         BinaryStoreClient(string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111")
             : query(_query,ConnectionType::message)
             , read(_read, ConnectionType::message)
-            , write(_write, ConnectionType::map32client) { }
+            , write(_write, ConnectionType::message) { }
 
         template <typename T> std::vector<uint8_t> Read(const T& id)
         {
@@ -152,7 +183,9 @@ namespace volstore
             if (limit > 64)
                 throw runtime_error("The max limit for Many is 64");
 
-            auto [res, body] = query.AsyncWriteWaitT(ids);
+            std::vector<uint8_t> send(ids.size());
+            std::copy(ids.begin(), ids.end(), send.begin());
+            auto [res, body] = query.AsyncWriteWait(std::move(send));
 
             if(res.size()!=8)
                 throw runtime_error("Bad reply");
