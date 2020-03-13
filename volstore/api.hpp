@@ -23,10 +23,11 @@ namespace volstore
 
 			d8u::util::Statistics* Stats() { return store.Stats(); }
 
-			size_t ConnectionCount()
-			{
-				return http.ConnectionCount() + binary.ConnectionCount();
-			}
+			size_t ConnectionCount() { return http.ConnectionCount() + binary.ConnectionCount(); }
+			size_t MessageCount() { return http.MessageCount() + binary.MessageCount(); }
+			size_t EventsStarted() { return http.EventsStarted() + binary.EventsStarted(); }
+			size_t EventsFinished() { return http.EventsFinished() + binary.EventsFinished(); }
+			size_t ReplyCount() { return http.ReplyCount() + binary.ReplyCount(); }
 
 			void Shutdown()
 			{

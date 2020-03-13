@@ -34,10 +34,11 @@ namespace volstore
         uint32_t _null = 0;
     public:
 
-        size_t ConnectionCount()
-        {
-            return query.ConnectionCount() + read.ConnectionCount() + write.ConnectionCount();
-        }
+        size_t ConnectionCount() { return query.ConnectionCount() + read.ConnectionCount() + write.ConnectionCount(); }
+        size_t MessageCount() { return query.MessageCount() + read.MessageCount() + write.MessageCount(); }
+        size_t EventsStarted() { return query.EventsStarted() + read.EventsStarted() + write.EventsStarted(); }
+        size_t EventsFinished() { return query.EventsFinished() + read.EventsFinished() + write.EventsFinished(); }
+        size_t ReplyCount() { return query.ReplyCount() + read.ReplyCount() + write.ReplyCount(); }
 
         void Join()
         {
@@ -58,7 +59,7 @@ namespace volstore
             Shutdown();
         }
 
-        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1, bool _buffered_writes = false)
+        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1, size_t buffer= 64*1024*1024, bool _buffered_writes = false)
             : buffered_writes(_buffered_writes)
             , store(_store)
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
@@ -109,7 +110,7 @@ namespace volstore
 
                     pc->ActivateMap(reply,result);
 
-                }, true, { threads })
+                }, true, TcpServer::Options { threads })
             , write((uint16_t)stoi(write_port.data()), (buffered_writes) ? ConnectionType::message : ConnectionType::readmap32,
                 [&](auto* pc, auto header, auto body, void* reply)
                 {
@@ -155,8 +156,10 @@ namespace volstore
                         pc->AsyncWrite(std::move(buffer));
                     }
 
-                }, buffered_writes, { threads })
+                }, buffered_writes, TcpServer::Options { threads })
         {
+            read.WriteBuffer(buffer);
+            write.ReadBuffer(buffer);
         }
     };
 
@@ -168,7 +171,11 @@ namespace volstore
 
         tdb::MediumHashmapSafe db;
     public:
-        BinaryStoreClient(std::string_view cache="127.0.0.1.cache",string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111")
+
+        size_t Reads() { return query.Reads() + read.Reads() + write.Reads(); }
+        size_t Writes() { return query.Writes() + read.Writes() + write.Writes(); }
+
+        BinaryStoreClient(std::string_view cache="127.0.0.1.cache",string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111",size_t buffer = 64*1024*1024)
             : db(cache)
             , query(_query,ConnectionType::message)
             , read(_read, ConnectionType::message)
@@ -254,11 +261,18 @@ namespace volstore
 
         tdb::MediumHashmapSafe db;
     public:
-        BinaryStoreEventClient(std::string_view cache = "127.0.0.1.cache",string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111")
+        BinaryStoreEventClient(std::string_view cache = "127.0.0.1.cache",string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111", size_t buffer = 64*1024*1024)
             : db(cache)
             , query(_query, ConnectionType::message)
             , read(_read, ConnectionType::message)
-            , write(_write, ConnectionType::map32client) { }
+            , write(_write, ConnectionType::map32client) 
+        { 
+            if (_read.size())
+                read.ReadBuffer(buffer);
+
+            if (_write.size())
+                write.WriteBuffer(buffer);
+        }
 
         void Flush()
         {

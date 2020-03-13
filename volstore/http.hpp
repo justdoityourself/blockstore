@@ -36,10 +36,11 @@ namespace volstore
         STORE &store;
     public:
 
-        size_t ConnectionCount()
-        {
-            return server.ConnectionCount();
-        }
+        size_t ConnectionCount() { return server.ConnectionCount(); }
+        size_t MessageCount() { return server.MessageCount(); }
+        size_t EventsStarted() { return server.EventsStarted(); }
+        size_t EventsFinished() { return server.EventsFinished(); }
+        size_t ReplyCount() { return server.ReplyCount(); }
 
         void Join()
         {
