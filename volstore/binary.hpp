@@ -31,6 +31,7 @@ namespace volstore
         TcpServer write;
 
         STORE& store;
+        uint32_t _null = 0;
     public:
 
         size_t ConnectionCount()
@@ -101,7 +102,12 @@ namespace volstore
                         return;
                     }
 
-                    pc->ActivateMap(reply,store.Map(req));
+                    auto result = store.Map(req);
+
+                    if (!result.size())
+                        result = gsl::span<uint8_t>((uint8_t*)&_null, sizeof(uint32_t));
+
+                    pc->ActivateMap(reply,result);
 
                 }, true, { threads })
             , write((uint16_t)stoi(write_port.data()), (buffered_writes) ? ConnectionType::message : ConnectionType::readmap32,
@@ -170,7 +176,12 @@ namespace volstore
 
         template <typename T> std::vector<uint8_t> Read(const T& id)
         {
-            return read.AsyncWriteWaitT(id).first;
+            auto result = std::move(read.AsyncWriteWaitT(id).first);
+
+            if (!result.size() || result.size() == 4)
+                throw std::runtime_error("Block Not Found");
+
+            return result;
         }
 
         template <typename T, typename Y> void Write(const T& id, const Y& payload)
