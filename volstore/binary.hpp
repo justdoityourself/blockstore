@@ -25,7 +25,7 @@ namespace volstore
 
     template <typename STORE, size_t U = 32, size_t M = 1024 * 1024> class BinaryStore
     {
-        bool buffered_writes;
+        bool buffered_writes = true;
         TcpServer query;
         TcpServer read;
         TcpServer write;
@@ -59,7 +59,7 @@ namespace volstore
             Shutdown();
         }
 
-        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1, size_t buffer= 64*1024*1024, bool _buffered_writes = false)
+        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1, size_t buffer= 64*1024*1024, bool _buffered_writes = true)
             : buffered_writes(_buffered_writes)
             , store(_store)
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
