@@ -156,7 +156,7 @@ namespace volstore
 					//Alignment Gap: Jump to next book
 					//
 
-					size += book_t - (size % book_t);
+					start += book_t - (start % book_t);
 					continue;
 				}
 
