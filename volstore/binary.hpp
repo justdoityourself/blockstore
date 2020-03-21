@@ -59,7 +59,7 @@ namespace volstore
             Shutdown();
         }
 
-        BinaryStore(STORE& _store, string_view is_port = "9095", string_view read_port = "9096", string_view write_port = "9097", size_t threads = 1, size_t buffer= 64*1024*1024, bool _buffered_writes = true)
+        BinaryStore(STORE& _store, string_view is_port = "9009", string_view read_port = "1010", string_view write_port = "1111", size_t threads = 1, size_t buffer= 64*1024*1024, bool _buffered_writes = true)
             : buffered_writes(_buffered_writes)
             , store(_store)
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
@@ -175,11 +175,15 @@ namespace volstore
         size_t Reads() { return query.Reads() + read.Reads() + write.Reads(); }
         size_t Writes() { return query.Writes() + read.Writes() + write.Writes(); }
 
-        BinaryStoreClient(std::string_view cache="127.0.0.1.cache",string_view _query = "127.0.0.1:9009", string_view _read = "127.0.0.1:1010", string_view _write = "127.0.0.1:1111",size_t buffer = 64*1024*1024)
+        BinaryStoreClient(std::string_view cache,string_view _query, string_view _read, string_view _write,size_t buffer = 16*1024*1024)
             : db(cache)
             , query(_query,ConnectionType::message)
             , read(_read, ConnectionType::message)
             , write(_write, ConnectionType::message) { }
+
+        BinaryStoreClient(std::string_view server = "127.0.0.1", size_t buffer = 16 * 1024 * 1024)
+            : BinaryStoreClient (std::string(server) + ".cache", std::string(server) + ":9009", std::string(server) + ":1010", std::string(server) + ":1111")
+        { }
 
         template <typename T> std::vector<uint8_t> Read(const T& id)
         {

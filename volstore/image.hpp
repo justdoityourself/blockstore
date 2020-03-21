@@ -96,8 +96,9 @@ namespace volstore
 
 	class Image
 	{
+		static uint64_t constexpr book_t = 256 * 1024 * 1024;
 		tdb::LargeHashmapSafe db;
-		tdb::_MapList<256 * 1024 * 1024, 0> dat;
+		tdb::_MapList<book_t, 0> dat;
 
 		d8u::util::Statistics stats;
 
@@ -141,6 +142,44 @@ namespace volstore
 			return gsl::span<uint8_t>(block + sizeof(uint32_t), size);
 		}
 
+		template <typename F> uint64_t EnumerateMap(uint64_t start, F&& f)
+		{
+			bool _continue = true;
+
+			while (_continue && start < dat.size())
+			{
+				auto block = dat.offset(start);
+				auto size = *((uint32_t*)block);
+
+				if (!size)
+				{
+					//Alignment Gap: Jump to next book
+					//
+
+					size += book_t - (size % book_t);
+					continue;
+				}
+
+				_continue = f(gsl::span<uint8_t>(block + sizeof(uint32_t), size));
+
+				start += sizeof(uint32_t) + size;
+			}
+
+			return start;
+		}
+
+		template <typename F> uint64_t Enumerate(uint64_t start, F&& f)
+		{
+			return EnumerateMap(start, [f = std::move(f)](auto map)
+			{
+				std::vector<uint8_t> result(map.size());
+
+				std::copy(map.begin(), map.end(), result.begin());
+
+				return f(result);
+			});
+		}
+
 		template <typename T> std::vector<uint8_t> Read(const T& id)
 		{
 			auto map = Map(id);
@@ -159,13 +198,18 @@ namespace volstore
 
 			auto res = db.InsertLock( *( (tdb::Key32*) id.data() ), uint64_t(0));
 
-			//Duplicate block insert?
+			//Duplicate block insert? Abort.
+			//This happens usually when the client isn't using a local block filter.
 			//
 
 			if (res.second && *res.first != 0) 
 				return gsl::span<uint8_t>();
 
-			auto [p, o] = dat.AllocateAlign(size + sizeof(uint32_t));
+			//This code will align blocks to the page at the cost of packing. Not needed.
+			//auto [p, o] = dat.AllocateAlign(size + sizeof(uint32_t));
+			//
+
+			auto [p, o] = dat.Allocate(size + sizeof(uint32_t));
 
 			if(!p) 
 				return gsl::span<uint8_t>();
@@ -182,7 +226,7 @@ namespace volstore
 			auto block = Allocate(id, payload.size());
 
 			if (!block.data())
-				return;
+				return; //Todo notification, however this never causes problems.
 
 			std::copy(payload.begin(), payload.end(), block.begin());
 		}
