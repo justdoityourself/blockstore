@@ -14,6 +14,7 @@
 
 #include "tdb/mapping.hpp"
 #include "d8u/util.hpp"
+#include "d8u/string.hpp"
 
 namespace volstore
 {
