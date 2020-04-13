@@ -26,7 +26,10 @@ namespace volstore
 	{
 		string root;
 	public:
-		Simple(string_view _root) : root(_root) { }
+		Simple(string_view _root) : root(_root) 
+		{ 
+			std::filesystem::create_directories(root);
+		}
 
 		template <typename T> mio::mmap_source Map(const T& id) const
 		{
