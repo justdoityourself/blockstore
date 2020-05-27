@@ -26,9 +26,9 @@ namespace volstore
     template <typename STORE, size_t U = 32, size_t M = 1024 * 1024> class BinaryStore
     {
         bool buffered_writes = true;
-        TcpServer query;
-        TcpServer read;
-        TcpServer write;
+        TcpServer<> query;
+        TcpServer<> read;
+        TcpServer<> write;
 
         STORE& store;
         uint32_t _null = 0;
@@ -63,7 +63,7 @@ namespace volstore
             : buffered_writes(_buffered_writes)
             , store(_store)
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
-                [&](auto* pc, auto req, auto body, void *reply)
+                [&](auto server,auto* pc, auto req, auto body, void *reply)
                 {
                     std::vector<uint8_t> buffer;
                     if (req.size() == 33)
@@ -91,9 +91,9 @@ namespace volstore
 
                     pc->ActivateWrite(reply, std::move( buffer ));
 
-                }, true, TcpServer::Options { threads })
+                }, true, TcpServer<>::Options { threads })
             , read((uint16_t)stoi(read_port.data()), ConnectionType::writemap32,
-                [&](auto* pc, auto req, auto body, void* reply)
+                [&](auto server,auto* pc, auto req, auto body, void* reply)
                 {
                     if (req.size() != 32)
                     {
@@ -110,9 +110,9 @@ namespace volstore
 
                     pc->ActivateMap(reply,result);
 
-                }, true, TcpServer::Options { threads })
+                }, true, TcpServer<>::Options { threads })
             , write((uint16_t)stoi(write_port.data()), (buffered_writes) ? ConnectionType::message : ConnectionType::readmap32,
-                [&](auto* pc, auto header, auto body, void* reply)
+                [&](auto server, auto* pc, auto header, auto body, void* reply)
                 {
                     if (header.size() < 32)
                     {
@@ -156,7 +156,7 @@ namespace volstore
                         pc->AsyncWrite(std::move(buffer));
                     }
 
-                }, buffered_writes, TcpServer::Options { threads })
+                }, buffered_writes, TcpServer<>::Options { threads })
         {
             read.WriteBuffer(buffer);
             write.ReadBuffer(buffer);
@@ -272,10 +272,10 @@ namespace volstore
             , write(_write, ConnectionType::map32client) 
         { 
             if (_read.size())
-                read.ReadBuffer(buffer);
+                read.ReadBuffer((int)buffer);
 
             if (_write.size())
-                write.WriteBuffer(buffer);
+                write.WriteBuffer((int)buffer);
         }
 
         void Flush()
