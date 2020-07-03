@@ -122,6 +122,11 @@ namespace volstore
 			stats.atomic.blocks++;
 			stats.atomic.write += size;
 
+			//Race condition:
+			//A block request happening around the same time will report zero as the offset.
+			//Up until the line below: "*res.first = o;"
+			//This has been resolved by reporting a miss for all uninitialized pointers.
+
 			auto res = db.InsertLock( *( (tdb::Key32*) id.data() ), uint64_t(0));
 
 			//Duplicate block insert? Abort.
@@ -161,7 +166,9 @@ namespace volstore
 		{
 			stats.atomic.queries++;
 
-			return db.FindLock( *( (tdb::Key32*) id.data() ) ) != nullptr;
+			auto* i = db.FindLock(*((tdb::Key32*) id.data()));
+
+			return i != nullptr && *i;
 		}
 
 		template <size_t U, typename T> uint64_t Many(const T& ids)
@@ -176,7 +183,10 @@ namespace volstore
 				throw runtime_error("The max limit for Many is 64");
 
 			for (size_t i = 0; i < limit; i++)
-				result.set(i, db.FindLock( *( ( (tdb::Key32*)ids.data() ) + i) ) != nullptr);
+			{
+				auto* k = db.FindLock(*(((tdb::Key32*)ids.data()) + i));
+				result.set(i, (k != nullptr && *k));
+			}		
 
 			return result.to_ullong();
 		}
