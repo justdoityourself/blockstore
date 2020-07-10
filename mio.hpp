@@ -430,6 +430,11 @@ public:
     typename std::enable_if<A == access_mode::write, void>::type
     sync(std::error_code& error);
 
+    /** Flushes the given memory mapped pages to disk. Errors are reported via `error`. */
+    template<access_mode A = AccessMode>
+    typename std::enable_if<A == access_mode::write, void>::type
+    sync2(void* start, size_t length, std::error_code& error);
+
     /**
      * All operators compare the address of the first byte and size of the two mapped
      * regions.
@@ -1127,6 +1132,32 @@ basic_mmap<AccessMode, ByteT>::sync(std::error_code& error)
         error = detail::last_error();
     }
 #endif
+}
+
+template<access_mode AccessMode, typename ByteT>
+template<access_mode A>
+typename std::enable_if<A == access_mode::write, void>::type
+basic_mmap<AccessMode, ByteT>::sync2(void* start, size_t length,std::error_code& error)
+{
+    error.clear();
+    if (!is_open())
+    {
+        error = std::make_error_code(std::errc::bad_file_descriptor);
+        return;
+    }
+
+    if (data())
+    {
+#ifdef _WIN32
+        if (::FlushViewOfFile(start, length) == 0)
+#else // POSIX
+        if (::msync(get_mapping_start(), mapped_length_, MS_SYNC) != 0)
+#endif
+        {
+            error = detail::last_error();
+            return;
+        }
+    }
 }
 
 template<access_mode AccessMode, typename ByteT>

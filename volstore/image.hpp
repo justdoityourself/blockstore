@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <bitset>
 #include <atomic>
+#include <thread>
 
 #include "../mio.hpp"
 
@@ -28,13 +29,40 @@ namespace volstore
 
 		d8u::util::Statistics stats;
 
+		bool running = true;
+		std::thread manager_thread;
+
 	public:
 
 		d8u::util::Statistics* Stats() { return &stats; }
 
 		Image(string_view _root)
 			: db(string(_root) + "/index.db")
-			, dat(string(_root) + "/image.dat") { }
+			, dat(string(_root) + "/image.dat")
+			, manager_thread([&]()
+			{
+				size_t counter = 0;
+				while (running)
+				{
+					std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+					if (counter++ % 10 == 0)
+					{
+						db.Flush();
+						dat.Flush();
+					}
+
+					/*
+						Todo Flatten
+					*/
+				}
+			}) { }
+
+		~Image()
+		{
+			running = false;
+			manager_thread.join();
+		}
 
 		template <typename T> bool ValidateStandard(const T& id)
 		{
@@ -160,6 +188,8 @@ namespace volstore
 				return; //Todo notification, however this never causes problems.
 
 			std::copy(payload.begin(), payload.end(), block.begin());
+
+			dat.Flush2(block.data(), block.size());
 		}
 
 		template <typename T> bool Is(const T& id)
