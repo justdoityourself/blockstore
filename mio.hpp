@@ -806,13 +806,22 @@ template<
     >::type
 > file_handle_type open_file_helper(const String& path, const access_mode mode)
 {
-    return ::CreateFileA(c_str(path),
+    if(path.size() >= MAX_PATH)
+        return ::CreateFileW((LPCWSTR) (std::wstring(L"\\\\?\\") + std::wstring(path.begin(), path.end())).c_str(),
             mode == access_mode::read ? GENERIC_READ : GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             0,
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL,
             0);
+    else
+        return ::CreateFileA(c_str(path),
+                mode == access_mode::read ? GENERIC_READ : GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                0,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                0);
 }
 
 template<typename String>
