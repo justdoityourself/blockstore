@@ -32,6 +32,8 @@ namespace volstore
 		bool running = true;
 		std::thread manager_thread;
 
+		std::string root;
+
 	public:
 
 		d8u::util::Statistics* Stats() { return &stats; }
@@ -39,6 +41,7 @@ namespace volstore
 		Image(string_view _root)
 			: db(string(_root) + "/index.db")
 			, dat(string(_root) + "/image.dat")
+			, root(_root)
 			, manager_thread([&]()
 			{
 				size_t counter = 0;
@@ -56,12 +59,20 @@ namespace volstore
 						Todo Flatten
 					*/
 				}
-			}) { }
+			}) 
+		{ 
+			if (std::filesystem::exists(string(_root) + "/lock.db"))
+				throw std::runtime_error("Image is locked, is a backup running? Did a backup fail to complete gracefully? If the second is true please delete the lock file.");
+
+			d8u::util::empty_file(string(_root) + "/lock.db");
+		}
 
 		~Image()
 		{
 			running = false;
 			manager_thread.join();
+
+			std::filesystem::remove(string(root) + "/lock.db");
 		}
 
 		template <typename T> bool ValidateStandard(const T& id)
@@ -217,6 +228,152 @@ namespace volstore
 				auto* k = db.FindLock(*(((tdb::Key32*)ids.data()) + i));
 				result.set(i, (k != nullptr && *k));
 			}		
+
+			return result.to_ullong();
+		}
+	};
+
+	class Image2
+	{
+		static uint64_t constexpr book_t = 256 * 1024 * 1024;
+		tdb::LargeHashmapSafe db;
+		std::atomic<uint64_t> file_tail;
+
+		d8u::util::Statistics stats;
+
+		bool running = true;
+		std::thread manager_thread;
+
+		std::string root;
+		std::string image;
+
+	public:
+
+		d8u::util::Statistics* Stats() { return &stats; }
+
+		Image2(string_view _root)
+			: db(string(_root) + "/index.db")
+			, image(string(_root) + "/image.dat")
+			, root(_root)
+			, file_tail(d8u::util::GetFileSize(string(_root) + "/image.dat"))
+			, manager_thread([&]()
+			{
+				size_t counter = 0;
+				while (running)
+				{
+					std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+					if (counter++ % 10 == 0)
+						db.Flush();
+
+					/*
+						Todo Flatten
+					*/
+				}
+			}) 
+		{ 
+			if (std::filesystem::exists(string(_root) + "/lock.db"))
+				throw std::runtime_error("Image is locked, is a backup running? Did a backup fail to complete gracefully? If the second is true please delete the lock file.");
+
+			d8u::util::empty_file(string(_root) + "/lock.db");
+		}
+
+		~Image2()
+		{
+			running = false;
+			manager_thread.join();
+
+			std::filesystem::remove(string(root) + "/lock.db");
+		}
+
+		template <typename T> bool ValidateStandard(const T& id)
+		{
+			auto block = Read(id);
+
+			return d8u::transform::validate_block(block);
+		}
+
+		template <typename T, typename V> bool Validate(const T& id, V v)
+		{
+			auto block = Read(id);
+
+			return v(block);
+		}
+
+		template <typename T> std::vector<uint8_t> Read(const T& id)
+		{
+			auto addr = db.FindLock(*((tdb::Key32*) id.data()));
+
+			std::vector<uint8_t> result;
+
+			if (!addr) return std::vector<uint8_t>();
+
+			std::ifstream file(image,ios::binary);
+			file.seekg(*addr, file.beg);
+
+			uint32_t size;
+
+			file.read((char*)&size, 4);
+
+			if (size > 1024 * 1024 * 32)
+				throw std::runtime_error("Bad block size");
+
+			result.resize(size);
+			file.read((char*)result.data(), size);
+
+			stats.atomic.items++;
+			stats.atomic.read += size;
+
+			return result;
+		}
+
+		template <typename T, typename Y> void Write(const T& id, const Y& payload)
+		{
+			uint32_t size = (uint32_t)payload.size();
+
+			stats.atomic.blocks++;
+			stats.atomic.write += size;
+
+			auto res = db.InsertLock(*((tdb::Key32*) id.data()), uint64_t(0));
+
+			if (res.second && *res.first != 0)
+				return; //Block has already been written.
+
+			auto o = file_tail += (payload.size()+sizeof(uint32_t));
+
+			std::ofstream file(image, ios::binary);
+			file.seekp(o);
+			file.write((char*)&size, sizeof(uint32_t));
+			file.write((char*)payload.data(), payload.size());
+
+			*res.first = o;
+		}
+
+		template <typename T> bool Is(const T& id)
+		{
+			stats.atomic.queries++;
+
+			auto* i = db.FindLock(*((tdb::Key32*) id.data()));
+
+			return i != nullptr && *i;
+		}
+
+		template <size_t U, typename T> uint64_t Many(const T& ids)
+		{
+			std::bitset<64> result;
+
+			auto limit = ids.size() / U;
+
+			stats.atomic.queries += limit;
+
+			if (limit > 64)
+				throw runtime_error("The max limit for Many is 64");
+
+			for (size_t i = 0; i < limit; i++)
+			{
+				auto* k = db.FindLock(*(((tdb::Key32*)ids.data()) + i));
+				result.set(i, (k != nullptr && *k));
+			}
 
 			return result.to_ullong();
 		}

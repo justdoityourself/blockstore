@@ -59,7 +59,7 @@ namespace volstore
             Shutdown();
         }
 
-        BinaryStore(STORE& _store, string_view is_port = "9009", string_view read_port = "1010", string_view write_port = "1111", size_t threads = 1, size_t buffer= 64*1024*1024, bool _buffered_writes = true)
+        BinaryStore(STORE& _store, string_view is_port = "9009", string_view read_port = "1010", string_view write_port = "1111", size_t threads = 1, size_t buffer= 16*1024*1024, bool _buffered_writes = true)
             : buffered_writes(_buffered_writes)
             , store(_store)
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
@@ -157,6 +157,117 @@ namespace volstore
                     }
 
                 }, buffered_writes, TcpServer<>::Options { threads })
+        {
+            read.WriteBuffer(buffer);
+            write.ReadBuffer(buffer);
+        }
+    };
+
+    template <typename STORE, size_t U = 32, size_t M = 1024 * 1024> class BinaryStore2
+    {
+        TcpServer<> query;
+        TcpServer<> read;
+        TcpServer<> write;
+
+        STORE& store;
+    public:
+
+        size_t ConnectionCount() { return query.ConnectionCount() + read.ConnectionCount() + write.ConnectionCount(); }
+        size_t MessageCount() { return query.MessageCount() + read.MessageCount() + write.MessageCount(); }
+        size_t EventsStarted() { return query.EventsStarted() + read.EventsStarted() + write.EventsStarted(); }
+        size_t EventsFinished() { return query.EventsFinished() + read.EventsFinished() + write.EventsFinished(); }
+        size_t ReplyCount() { return query.ReplyCount() + read.ReplyCount() + write.ReplyCount(); }
+
+        void Join()
+        {
+            query.Join();
+            read.Join();
+            write.Join();
+        }
+
+        void Shutdown()
+        {
+            query.Shutdown();
+            read.Shutdown();
+            write.Shutdown();
+        }
+
+        ~BinaryStore2()
+        {
+            Shutdown();
+        }
+
+        BinaryStore2(STORE& _store, string_view is_port = "9009", string_view read_port = "1010", string_view write_port = "1111", size_t threads = 1, size_t buffer = 16 * 1024 * 1024)
+            : store(_store)
+            , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
+                [&](auto server, auto* pc, auto req, auto body, void* reply)
+                {
+                    std::vector<uint8_t> buffer;
+                    if (req.size() == 33)
+                    {
+                        buffer.resize(1);
+                        buffer[0] = (char)store.ValidateStandard(gsl::span<uint8_t>(req.data() + 1, (size_t)32));
+                    }
+                    else if (req.size() % U)
+                    {
+                        std::cout << "Query Dropping Connection" << std::endl;
+                        pc->Close();
+
+                        return;
+                    }
+                    else if (req.size() == U)
+                    {
+                        buffer.resize(1);
+                        buffer[0] = (char)store.Is(req);
+                    }
+                    else
+                    {
+                        buffer.resize(8);
+                        *((uint64_t*)buffer.data()) = store.Many<U>(req);
+                    }
+
+                    pc->ActivateWrite(reply, std::move(buffer));
+
+                }, true, TcpServer<>::Options{ threads })
+            , read((uint16_t)stoi(read_port.data()), ConnectionType::message,
+                [&](auto server, auto* pc, auto req, auto body, void* reply)
+                {
+                    if (req.size() != 32)
+                    {
+                        std::cout << "Read Dropping Connection" << std::endl;
+                        pc->Close();
+
+                        return;
+                    }
+
+                    auto result = store.Read(req);
+
+                    if (!result.size())
+                        result = std::vector<uint8_t>{ 0,0,0,0 };
+
+                    pc->ActivateWrite(reply, std::move(result));
+
+                }, true, TcpServer<>::Options{ threads })
+            , write((uint16_t)stoi(write_port.data()), ConnectionType::message,
+                [&](auto server, auto* pc, auto header, auto body, void* reply)
+                {
+                    if (header.size() < 32)
+                    {
+                        std::cout << "write Dropping Connection" << std::endl;
+                        pc->Close();
+
+                        return;
+                    }
+
+                    store.Write(gsl::span<uint8_t>(header.data(), (size_t)32), gsl::span<uint8_t>(header.data() + 32, header.size() - 32));
+                    uint32_t written = header.size() - 32;
+
+                    std::vector<uint8_t> buffer(4);
+                    *((uint32_t*)buffer.data()) = written;
+
+                    pc->ActivateWrite(reply, std::move(buffer));
+
+                }, true, TcpServer<>::Options{ threads })
         {
             read.WriteBuffer(buffer);
             write.ReadBuffer(buffer);
