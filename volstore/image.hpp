@@ -340,8 +340,9 @@ namespace volstore
 				return; //Block has already been written.
 
 			auto o = file_tail += (payload.size()+sizeof(uint32_t));
+			o -= size + sizeof(uint32_t);
 
-			std::ofstream file(image, ios::binary);
+			std::ofstream file(image, ios::binary|ios::app);
 			file.seekp(o);
 			file.write((char*)&size, sizeof(uint32_t));
 			file.write((char*)payload.data(), payload.size());
