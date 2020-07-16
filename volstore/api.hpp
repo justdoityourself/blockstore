@@ -13,11 +13,11 @@ namespace volstore
 {
 	namespace api
 	{
-		class StorageService
+		template < typename TH > class StorageService
 		{
-			Image store;
-			HttpStore<Image> http;
-			BinaryStore<Image> binary;
+			Image<TH> store;
+			HttpStore<Image<TH>> http;
+			BinaryStore<Image<TH>> binary;
 
 		public:
 
@@ -62,11 +62,11 @@ namespace volstore
 			}
 		};
 
-		class StorageService2
+		template < typename TH > class StorageService2
 		{
-			Image2 store;
-			HttpStore<Image2> http;
-			BinaryStore2<Image2> binary;
+			Image2<TH> store;
+			HttpStore<Image2<TH>> http;
+			BinaryStore2<Image2<TH>> binary;
 
 		public:
 

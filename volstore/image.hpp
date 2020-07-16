@@ -14,6 +14,7 @@
 
 #include "tdb/legacy.hpp"
 #include "d8u/util.hpp"
+#include "d8u/memory.hpp"
 #include "d8u/transform.hpp"
 
 namespace volstore
@@ -21,7 +22,7 @@ namespace volstore
 	using namespace std;
 	using namespace gsl;
 
-	class Image
+	template < typename TH > class Image
 	{
 		static uint64_t constexpr book_t = 256 * 1024 * 1024;
 		tdb::LargeHashmapSafe db;
@@ -79,7 +80,7 @@ namespace volstore
 		{
 			auto block = Map(id);
 
-			return d8u::transform::validate_block(block);
+			return d8u::transform::validate_block<T>(block);
 		}
 
 		template <typename T, typename V> bool Validate(const T& id, V v)
@@ -137,7 +138,7 @@ namespace volstore
 		{
 			return EnumerateMap(start, [f = std::move(f)](auto map)
 			{
-				std::vector<uint8_t> result(map.size());
+				d8u::sse_vector result(map.size());
 
 				std::copy(map.begin(), map.end(), result.begin());
 
@@ -145,11 +146,11 @@ namespace volstore
 			});
 		}
 
-		template <typename T> std::vector<uint8_t> Read(const T& id)
+		template <typename T> d8u::sse_vector Read(const T& id)
 		{
 			auto map = Map(id);
 
-			std::vector<uint8_t> result(map.size());
+			d8u::sse_vector result(map.size());
 
 			std::copy(map.begin(), map.end(), result.begin());
 
@@ -233,7 +234,7 @@ namespace volstore
 		}
 	};
 
-	class Image2
+	template < typename TH >class Image2
 	{
 		static uint64_t constexpr book_t = 256 * 1024 * 1024;
 		tdb::LargeHashmapSafe db;
@@ -247,6 +248,9 @@ namespace volstore
 		std::string root;
 		std::string image;
 
+		std::ofstream wfile;
+		std::mutex wio;
+
 	public:
 
 		d8u::util::Statistics* Stats() { return &stats; }
@@ -254,8 +258,9 @@ namespace volstore
 		Image2(string_view _root)
 			: db(string(_root) + "/index.db")
 			, image(string(_root) + "/image.dat")
+			, wfile(string(_root) + "/image.dat", ios::binary | ios::app)
 			, root(_root)
-			, file_tail(d8u::util::GetFileSize(string(_root) + "/image.dat"))
+			, file_tail(0)
 			, manager_thread([&]()
 			{
 				size_t counter = 0;
@@ -272,6 +277,9 @@ namespace volstore
 				}
 			}) 
 		{ 
+			if(std::filesystem::exists(root + "/image.dat"))
+				file_tail = d8u::util::GetFileSize(root + "/image.dat");
+
 			if (std::filesystem::exists(string(_root) + "/lock.db"))
 				throw std::runtime_error("Image is locked, is a backup running? Did a backup fail to complete gracefully? If the second is true please delete the lock file.");
 
@@ -290,7 +298,7 @@ namespace volstore
 		{
 			auto block = Read(id);
 
-			return d8u::transform::validate_block(block);
+			return d8u::transform::validate_block<T>(block);
 		}
 
 		template <typename T, typename V> bool Validate(const T& id, V v)
@@ -300,18 +308,18 @@ namespace volstore
 			return v(block);
 		}
 
-		template <typename T> std::vector<uint8_t> Read(const T& id)
+		template <typename T> d8u::sse_vector Read(const T& id)
 		{
 			auto addr = db.FindLock(*((tdb::Key32*) id.data()));
 
-			std::vector<uint8_t> result;
+			d8u::sse_vector result;
 
-			if (!addr) return std::vector<uint8_t>();
+			if (!addr) return d8u::sse_vector();
 
 			std::ifstream file(image,ios::binary);
 			file.seekg(*addr, file.beg);
 
-			uint32_t size;
+			uint32_t size=-1;
 
 			file.read((char*)&size, 4);
 
@@ -339,13 +347,17 @@ namespace volstore
 			if (res.second && *res.first != 0)
 				return; //Block has already been written.
 
-			auto o = file_tail += (payload.size()+sizeof(uint32_t));
-			o -= size + sizeof(uint32_t);
+			uint64_t o;
 
-			std::ofstream file(image, ios::binary|ios::app);
-			file.seekp(o);
-			file.write((char*)&size, sizeof(uint32_t));
-			file.write((char*)payload.data(), payload.size());
+			{
+				std::lock_guard<std::mutex> lck(wio);
+				o = file_tail += (payload.size() + sizeof(uint32_t));
+				o -= size + sizeof(uint32_t);
+
+				//wfile.seekp(o); not needed with append mode;
+				wfile.write((char*)&size, sizeof(uint32_t));
+				wfile.write((char*)payload.data(), payload.size());
+			}
 
 			*res.first = o;
 		}

@@ -202,7 +202,7 @@ namespace volstore
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
                 [&](auto server, auto* pc, auto req, auto body, void* reply)
                 {
-                    std::vector<uint8_t> buffer;
+                    d8u::sse_vector buffer;
                     if (req.size() == 33)
                     {
                         buffer.resize(1);
@@ -243,7 +243,7 @@ namespace volstore
                     auto result = store.Read(req);
 
                     if (!result.size())
-                        result = std::vector<uint8_t>{ 0,0,0,0 };
+                        result = d8u::sse_vector{ 0,0,0,0 };
 
                     pc->ActivateWrite(reply, std::move(result));
 
@@ -262,7 +262,7 @@ namespace volstore
                     store.Write(gsl::span<uint8_t>(header.data(), (size_t)32), gsl::span<uint8_t>(header.data() + 32, header.size() - 32));
                     uint32_t written = header.size() - 32;
 
-                    std::vector<uint8_t> buffer(4);
+                    d8u::sse_vector buffer(4);
                     *((uint32_t*)buffer.data()) = written;
 
                     pc->ActivateWrite(reply, std::move(buffer));
@@ -296,7 +296,7 @@ namespace volstore
             : BinaryStoreClient (std::string(server) + ".cache", std::string(server) + ":9009", std::string(server) + ":1010", std::string(server) + ":1111")
         { }
 
-        template <typename T> std::vector<uint8_t> Read(const T& id)
+        template <typename T> d8u::sse_vector Read(const T& id)
         {
             auto result = std::move(read.AsyncWriteWaitT(id).first);
 
