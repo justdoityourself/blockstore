@@ -306,7 +306,7 @@ namespace volstore
             return result;
         }
 
-        template <typename T, typename Y> void Write(const T& id, const Y& payload)
+        template <typename T, typename Y> void Write(const T& id, Y&& payload)
         {
             write.AsyncWriteWait(join_memory(id,payload)); //Sub-optimal, todo write lists
         }
