@@ -413,6 +413,13 @@ namespace volstore
                 }
                 catch (...)
                 {
+                    /*
+                        Reconnect, as opposed to a complete failure, introduces several tricky edgecases that might effect data transport and integrety.
+                        While these edge cases can be addressed, the more simple approch of error out is what is currently enabled with the throw; command.
+                    */
+
+                    throw; 
+
                     //TODO EVENT callbacks
 
                     if (attempt++ >= reconnect_retry)
