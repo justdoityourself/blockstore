@@ -335,6 +335,13 @@ namespace volstore
 			return result;
 		}
 
+		void _Write2() {} //No Op
+
+		template <typename T, typename Y> void _Write1(const T& id, const Y& payload)
+		{
+			Write(id, payload); //Passthrough
+		}
+
 		template <typename T, typename Y> void Write(const T& id, const Y& payload)
 		{
 			uint32_t size = (uint32_t)payload.size();
@@ -360,6 +367,22 @@ namespace volstore
 			}
 
 			*res.first = o;
+		}
+
+		template < typename T > int _IsLocal(const T& id)
+		{
+			stats.atomic.queries++;
+
+			auto* i = db.FindLock(*((tdb::Key32*) id.data()));
+
+			return (i != nullptr && *i) ? 1 : -1;
+		}
+
+		template <size_t U, typename T> void _Many1(const T& ids) {} //No Op
+
+		uint64_t _Many2()
+		{
+			return 0; //No Op
 		}
 
 		template <typename T> bool Is(const T& id)

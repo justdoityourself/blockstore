@@ -368,6 +368,217 @@ namespace volstore
         }
     };
 
+    template < size_t reconnect_retry = 10 > class BinaryStoreClient2
+    {
+        MsgConnection query;
+        MsgConnection read;
+        MsgConnection write;
+
+        tdb::MediumHashmapSafe db;
+        size_t reads = 0;
+        size_t writes = 0;
+
+        std::string addr_query;
+        std::string addr_read;
+        std::string addr_write;
+
+    public:
+
+        size_t Reads() { return reads; }
+        size_t Writes() { return writes; }
+
+        BinaryStoreClient2(std::string_view cache, string_view _query, string_view _read, string_view _write, size_t buffer = 16 * 1024 * 1024)
+            : db(cache)
+            , query(_query)
+            , read(_read)
+            , write(_write)
+            , addr_query(_query)
+            , addr_read(_read) 
+            , addr_write(_write) { }
+
+        BinaryStoreClient2(std::string_view server = "127.0.0.1", size_t buffer = 16 * 1024 * 1024)
+            : BinaryStoreClient2(std::string(server) + ".cache", std::string(server) + ":9009", std::string(server) + ":1010", std::string(server) + ":1111")
+        { }
+
+        template < typename F > void Reconnect(MsgConnection & s, std::string_view d, F f,bool wait = false)
+        {
+            size_t attempt = 0;
+            bool sent = false;
+            while(!sent)
+            { 
+                try
+                {
+                    f();
+                    sent = true;
+                }
+                catch (...)
+                {
+                    //TODO EVENT callbacks
+
+                    if (attempt++ >= reconnect_retry)
+                    {
+                        std::cout << "Failed to reconnect to " << d << std::endl;
+                        throw;
+                    }
+
+                    std::cout << "Reconnecting to " << d << std::endl;
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+
+                    if (!wait)
+                    {
+                        s.Close();
+                        s.Connect(d);
+                    }
+                }
+            }
+        }
+
+        template <typename T> void _Read1(const T& id)
+        {
+            Reconnect(read, addr_read, [&]()
+            {
+                read.SendT(id);
+            });
+        }
+
+        d8u::sse_vector _Read2()
+        {
+            d8u::sse_vector result;
+
+            Reconnect(read, addr_read, [&]()
+            {
+                result = read.ReceiveMessage();
+            },true);
+
+            return result;
+        }
+
+        template <typename T> d8u::sse_vector Read(const T& id)
+        {
+            _Read1(id);
+
+            return _Read2();
+        }
+
+        template <typename T, typename Y> void _Write1(const T& id, Y&& payload)
+        {
+            Reconnect(write, addr_write, [&]()
+            {
+                uint32_t size = sizeof(id) + payload.size();
+                if (sizeof(uint32_t) != write.Write(gsl::span<uint8_t>((uint8_t*)&size, sizeof(uint32_t))) || id.size() != write.Write(id) || payload.size() != write.Write(payload))
+                    throw std::runtime_error("socket disconnected");
+            });
+        }
+
+        void _Write2()
+        {
+            Reconnect(read, addr_read, [&]()
+            {
+                write.ReceiveMessage();
+            }, true);
+        }
+
+        template <typename T, typename Y> void Write(const T& id, Y&& payload)
+        {
+            _Write1(id, std::move(payload));
+            _Write2();
+        }
+
+        template < typename T > int _IsLocal(const T& id)
+        {
+            auto [ptr, exists] = db.InsertLock(*((tdb::Key32*) id.data()), uint64_t(0));
+
+            return exists ? 1 : 0;
+        }
+
+        template < typename T > bool _Is1(const T& id)
+        {
+            auto [ptr, exists] = db.InsertLock(*((tdb::Key32*) id.data()), uint64_t(0));
+
+            if (exists)
+                return true;
+
+            Reconnect(query, addr_query, [&]()
+            {
+                query.SendT(id);
+            });
+
+            return false;
+        }
+
+        bool _Is2()
+        {
+            d8u::sse_vector res;
+            
+            Reconnect(query, addr_query, [&]()
+            {
+                res = query.ReceiveMessage();
+            }, true);
+
+            return (res.size() == 1) ? res[0] > 0 : false;
+        }
+
+        template <typename T> bool Is(const T& id)
+        {
+            bool result = _Is1(id);
+
+            if (result)
+                return true;
+
+            return _Is2();
+        }
+
+        template <size_t U, typename T> void _Many1(const T& ids)
+        {
+            Reconnect(query, addr_query, [&]()
+            {
+                query.SendMessage(ids);
+            });
+        }
+
+        uint64_t _Many2()
+        {
+            d8u::sse_vector res;
+
+            Reconnect(query, addr_query, [&]()
+            {
+                res = query.ReceiveMessage();
+            }, true);
+
+            if (res.size() == 1)
+            {
+                std::bitset<64> bits;
+                if (*res.data())
+                    bits[0] = 1;
+
+                return bits.to_ullong();
+            }
+            else if(res.size() == 8)
+                return *(uint64_t*)res.data();
+            else
+                throw std::runtime_error("Query assert failed");
+        }
+
+        template <size_t U, typename T> uint64_t Many(const T& ids)
+        {
+            _Many1<U>(ids);
+
+            return _Many2();
+        }
+
+        template <typename T, typename V> bool Validate(const T& id, V v)
+        {
+            std::vector<uint8_t> cmd = { 1 };
+
+            query.SendMessage(join_memory(cmd, id));
+
+            auto res = query.ReceiveMessage();
+
+            return (res.size() == 1) ? res[0] > 0 : false;
+        }
+    };
+
     class BinaryStoreEventClient
     {
         EventClient query;
