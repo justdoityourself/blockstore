@@ -269,7 +269,12 @@ namespace volstore
 					std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
 					if (counter++ % 10 == 0)
+					{
 						db.Flush();
+						
+						std::lock_guard<std::mutex> lck(wio);
+						wfile.flush();
+					}
 
 					/*
 						Todo Flatten
@@ -298,7 +303,7 @@ namespace volstore
 		{
 			auto block = Read(id);
 
-			return d8u::transform::validate_block<T>(block);
+			return d8u::transform::validate_block<TH>(block);
 		}
 
 		template <typename T, typename V> bool Validate(const T& id, V v)
@@ -361,7 +366,7 @@ namespace volstore
 				o = file_tail += (payload.size() + sizeof(uint32_t));
 				o -= size + sizeof(uint32_t);
 
-				//wfile.seekp(o); not needed with append mode;
+				wfile.seekp(o); //not needed with append mode;?
 				wfile.write((char*)&size, sizeof(uint32_t));
 				wfile.write((char*)payload.data(), payload.size());
 			}
