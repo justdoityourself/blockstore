@@ -255,7 +255,7 @@ namespace volstore
 
 		d8u::util::Statistics* Stats() { return &stats; }
 
-		Image2(string_view _root)
+		Image2(string_view _root, int start_code = 0)
 			: db(string(_root) + "/index.db")
 			, image(string(_root) + "/image.dat")
 			, wfile(string(_root) + "/image.dat", ios::binary | ios::app)
@@ -282,6 +282,16 @@ namespace volstore
 				}
 			}) 
 		{ 
+			if (start_code == 1)
+				RepairQuick();
+			else if (start_code == 2)
+				Repair(false);
+			else if (start_code == 3)
+				Repair(true);
+
+			if(start_code)
+				std::filesystem::remove(string(root) + "/lock.db");
+
 			if(std::filesystem::exists(root + "/image.dat"))
 				file_tail = d8u::util::GetFileSize(root + "/image.dat");
 
@@ -297,6 +307,112 @@ namespace volstore
 			manager_thread.join();
 
 			std::filesystem::remove(string(root) + "/lock.db");
+		}
+
+		void RepairQuick()
+		{
+			auto& table = db.Table();
+			
+			std::cout << "Lock reset count: " << table.ResetNodeLocks() << std::endl;
+
+			size_t count = 0;
+			table.Iterate([&](auto v) 
+			{
+				/*
+					Null pointers represent a half completed write, but since the block will be overwritten
+					on a subsequent query / write routine there is no action to take here.
+
+					Simply report that it happened:
+				*/
+
+				if (!v)
+					count++;
+
+				return true;
+			});
+
+			std::cout << "Null block pointer count: " << count << std::endl;
+		}
+
+		/*template <typename F> void ReadAll(F && f)
+		{
+			auto& table = db.Table();
+			std::ifstream file(image, ios::binary);
+			
+			size_t count = 0;
+			table.Iterate([&](auto v)
+			{
+				d8u::sse_vector result;
+
+				file.seekg(v, file.beg);
+
+				uint32_t size = -1;
+
+				file.read((char*)&size, 4);
+
+				if (size > 1024 * 1024 * 32)
+					throw std::runtime_error("Bad block size");
+
+				result.resize(size);
+				file.read((char*)result.data(), size);
+
+				stats.atomic.items++;
+				stats.atomic.read += size;
+
+				f(result);
+			});
+		}*/
+
+		void Repair(bool can_write)
+		{
+			auto& table = db.Table();
+			std::ifstream file(image, ios::binary);
+
+			size_t count = 0;
+
+			auto do_repair = [&](auto& v)
+			{
+				count++;
+				std::cout << "Corruption at: " << v << std::endl;
+
+				if (!can_write)
+					return;
+
+				std::cout << "Trimming Block: " << v << std::endl;
+
+				v = 0;
+			};
+
+			table.Iterate([&](auto & v)
+			{
+				d8u::sse_vector result;
+
+				file.seekg(v, file.beg);
+
+				uint32_t size = -1;
+
+				file.read((char*)&size, 4);
+
+				if (size > 1024 * 1024 * 32)
+				{
+					do_repair(v);
+					return true;
+				}			
+
+				result.resize(size);
+				file.read((char*)result.data(), size);
+
+				stats.atomic.items++;
+				stats.atomic.read += size;
+
+				if (!d8u::transform::validate_block<TH>(result))
+					do_repair(v);
+
+				return true;
+			});
+
+			if (count && !can_write)
+				throw std::runtime_error("Database is corrupt but repair prevented");		
 		}
 
 		template <typename T> bool ValidateStandard(const T& id)
