@@ -202,6 +202,8 @@ namespace volstore
             , query((uint16_t)stoi(is_port.data()), ConnectionType::message,
                 [&](auto server, auto* pc, auto req, auto body, void* reply)
                 {
+                    d8u::trace("query", req.size());
+
                     d8u::sse_vector buffer;
                     if (req.size() == 33)
                     {
@@ -232,6 +234,8 @@ namespace volstore
             , read((uint16_t)stoi(read_port.data()), ConnectionType::message,
                 [&](auto server, auto* pc, auto req, auto body, void* reply)
                 {
+                    d8u::trace("read", req.size());
+
                     if (req.size() != 32)
                     {
                         std::cout << "Read Dropping Connection" << std::endl;
@@ -251,6 +255,8 @@ namespace volstore
             , write((uint16_t)stoi(write_port.data()), ConnectionType::message,
                 [&](auto server, auto* pc, auto header, auto body, void* reply)
                 {
+                    d8u::trace("write", header.size());
+
                     if (header.size() < 32)
                     {
                         std::cout << "write Dropping Connection" << std::endl;
